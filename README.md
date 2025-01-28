@@ -25,7 +25,7 @@ A lightweight C++ automation tool designed to streamline the process of launchin
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/NicholasBly/docker-webui-automation.git
+git clone https://github.com/NicholasBly/OpenWebUI-Automation.git
 ```
 
 2. Open the solution in Visual Studio 2022
