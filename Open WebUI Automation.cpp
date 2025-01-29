@@ -26,20 +26,15 @@ void ShowConsole()
 struct Config {
     std::wstring ollamaPath;
     std::wstring dockerPath;
-    std::wstring limitNvpstatePath;
-    std::wstring limitNvpstateConfigPath;
     bool isValid() const {
-        return !ollamaPath.empty() && !dockerPath.empty() &&
-            !limitNvpstatePath.empty() && !limitNvpstateConfigPath.empty();
+        return !ollamaPath.empty() && !dockerPath.empty();
     }
 };
 
 void createDefaultConfig(const std::string& configPath) {
     json defaultConfig = {
         {"ollamaPath", ""},
-        {"dockerPath", ""},
-        {"limitNvpstatePath", ""},
-        {"limitNvpstateConfigPath", ""}
+        {"dockerPath", ""}
     };
 
     std::ofstream configFile(configPath);
@@ -70,8 +65,6 @@ Config loadConfig() {
         std::wcout << L"Please edit config.json and set the following paths:\n";
         std::wcout << L"- ollamaPath (path to Ollama executable)\n";
         std::wcout << L"- dockerPath (path to Docker Desktop)\n";
-        std::wcout << L"- limitNvpstatePath (path to limit-nvpstate executable)\n";
-        std::wcout << L"- limitNvpstateConfigPath (path to limit-nvpstate config)\n";
         return config;
     }
 
@@ -93,8 +86,6 @@ Config loadConfig() {
         // Convert JSON strings to wstring
         std::string ollamaPath = j["ollamaPath"];
         std::string dockerPath = j["dockerPath"];
-        std::string limitNvpstatePath = j["limitNvpstatePath"];
-        std::string limitNvpstateConfigPath = j["limitNvpstateConfigPath"];
 
         std::wcout << L"Checking paths..." << std::endl;
 
@@ -109,24 +100,12 @@ Config loadConfig() {
                 std::wstring(dockerPath.begin(), dockerPath.end()) << std::endl;
             return config;
         }
-        if (!fs::exists(limitNvpstatePath)) {
-            std::wcout << L"Error: limit-nvpstate path does not exist: " <<
-                std::wstring(limitNvpstatePath.begin(), limitNvpstatePath.end()) << std::endl;
-            return config;
-        }
-        if (!fs::exists(limitNvpstateConfigPath)) {
-            std::wcout << L"Error: limit-nvpstate config path does not exist: " <<
-                std::wstring(limitNvpstateConfigPath.begin(), limitNvpstateConfigPath.end()) << std::endl;
-            return config;
-        }
 
         //std::wcout << L"All paths exist. Converting to wstring..." << std::endl;
 
         // Convert paths to wstring
         config.ollamaPath = std::wstring(ollamaPath.begin(), ollamaPath.end());
         config.dockerPath = std::wstring(dockerPath.begin(), dockerPath.end());
-        config.limitNvpstatePath = std::wstring(limitNvpstatePath.begin(), limitNvpstatePath.end());
-        config.limitNvpstateConfigPath = std::wstring(limitNvpstateConfigPath.begin(), limitNvpstateConfigPath.end());
 
         std::wcout << L"Configuration loaded successfully!" << std::endl;
 
@@ -209,46 +188,6 @@ void KillProcess(const wchar_t* processName) {
     CloseHandle(snapshot);
 }
 
-// Function to modify nvpstate config.json
-bool ModifyConfig(const std::wstring& configPath, bool startMinimized) {
-    std::ifstream inFile(configPath);
-    if (!inFile) return false;
-
-    std::stringstream buffer;
-    buffer << inFile.rdbuf();
-    inFile.close();
-
-    std::string content = buffer.str();
-    const std::string trueStr = "\"start_minimized\": true";
-    const std::string falseStr = "\"start_minimized\": false";
-
-    size_t posTrue = content.find(trueStr);
-    size_t posFalse = content.find(falseStr);
-
-    if (posTrue != std::string::npos) {
-        if (!startMinimized) {
-            content.replace(posTrue, trueStr.length(), falseStr);
-        }
-    }
-    else if (posFalse != std::string::npos) {
-        if (startMinimized) {
-            content.replace(posFalse, falseStr.length(), trueStr);
-        }
-    }
-    else {
-        std::wcout << L"Could not find start_minimized setting in config file!" << std::endl;
-        return false;
-    }
-
-    std::ofstream outFile(configPath);
-    if (!outFile) return false;
-
-    outFile << content;
-    outFile.close();
-
-    return true;
-}
-
 // Function to open URL in default browser
 void OpenBrowser(const wchar_t* url) {
     ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
@@ -263,21 +202,6 @@ int main() {
         std::cin.get();
         return 1;
     }
-
-    // Kill limit-nvpstate if running
-    std::wcout << L"Stopping limit-nvpstate..." << std::endl;
-    KillProcess(L"limit-nvpstate.exe");
-
-    // Modify config
-    std::wcout << L"Modifying config..." << std::endl;
-    if (!ModifyConfig(config.limitNvpstateConfigPath, false)) {
-        std::wcout << L"Failed to modify config file!" << std::endl;
-        return 1;
-    }
-
-    // Start limit-nvpstate
-    std::wcout << L"Starting limit-nvpstate..." << std::endl;
-    StartProcess(config.limitNvpstatePath.c_str());
 
     // Start Ollama
     std::wcout << L"Starting Ollama..." << std::endl;
@@ -312,13 +236,6 @@ int main() {
             KillProcess(L"ollama app.exe");
             KillProcess(L"ollama.exe");
             KillProcess(L"ollama_llama_server.exe");
-
-            // Make limit-nvpstate run minimized again once we're done
-            ModifyConfig(config.limitNvpstateConfigPath, true);
-
-            // Start limit-nvpstate
-            std::wcout << L"Starting limit-nvpstate..." << std::endl;
-            StartProcess(config.limitNvpstatePath.c_str());
 
             // Shutdown WSL
             std::wcout << L"Shutting down wsl..." << std::endl;
