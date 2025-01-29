@@ -4,6 +4,7 @@ A lightweight C++ automation tool designed to streamline the process of launchin
 
 ## Features
 
+- Config.json creation to define paths to executables
 - Automated startup sequence for Docker Desktop and Ollama
 - Automatic deployment of Open WebUI container
 - Intelligent Docker status monitoring
@@ -35,7 +36,7 @@ git clone https://github.com/NicholasBly/OpenWebUI-Automation.git
    - Set Character Set to "Use Unicode Character Set"
    - Add required libraries: shell32.lib and user32.lib
 
-4. Adjust paths in the code to match your system:
+4. Adjust paths in the config.json to match your system:
    - Ollama executable path
    - Docker Desktop executable path
    - limit-nvpstate paths (if using)
@@ -70,7 +71,7 @@ ModifyConfig(false); // Set start_minimized to false
 ### Docker Container Settings
 The default Docker container configuration for NVidia GPUs is:
 ```bash
-docker run -d -p 3000:8080 --gpus all --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:cuda
+docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main
 ```
 
 Modify these settings in the code as needed.
