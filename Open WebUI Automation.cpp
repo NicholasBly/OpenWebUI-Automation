@@ -168,9 +168,9 @@ int main() {
             std::wcout << L"Docker closed, shutting down..." << std::endl;
 
             // Stop Ollama
-            system("taskkill /F /IM ollama app.exe");
-            system("taskkill /F /IM ollama.exe");
-            system("taskkill /F /IM ollama_llama_server.exe");
+            KillProcess(L"ollama app.exe");
+            KillProcess(L"ollama.exe");
+            KillProcess(L"ollama_llama_server.exe");
 
             // Make limit-nvpstate run minimized again once we're done
             ModifyConfig(true);
