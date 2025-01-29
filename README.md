@@ -1,6 +1,6 @@
 # Docker WebUI Automation Tool
 
-A lightweight C++ automation tool designed to streamline the process of launching and managing Docker, Ollama, and Open WebUI, along with managing limit-nvpstate for my personal machine. The tool will monitor the docker process and clean up after it has been closed.
+A lightweight C++ automation tool designed to streamline the process of launching and managing Docker, Ollama, and Open WebUI. The tool will monitor the docker process and clean up after it has been closed.
 
 ## Features
 
@@ -9,7 +9,6 @@ A lightweight C++ automation tool designed to streamline the process of launchin
 - Automatic deployment of Open WebUI container
 - Intelligent Docker status monitoring
 - Shutdown of all components when Docker closes
-- Integration with limit-nvpstate along with config.json editing (optional, for my machine only)
 - WSL shutdown automation
 - Process monitoring and management
 
@@ -39,7 +38,6 @@ git clone https://github.com/NicholasBly/OpenWebUI-Automation.git
 4. Adjust paths in the config.json to match your system:
    - Ollama executable path
    - Docker Desktop executable path
-   - limit-nvpstate paths (if using)
 
 ## Usage
 
@@ -48,9 +46,6 @@ git clone https://github.com/NicholasBly/OpenWebUI-Automation.git
 2. Run the executable as Administrator
 
 The program will:
-- Kill any existing limit-nvpstate process
-- Modify the limit-nvpstate configuration
-- Launch limit-nvpstate
 - Start Ollama
 - Launch Docker Desktop
 - Wait for Docker to be fully operational
@@ -60,13 +55,6 @@ The program will:
 - Perform cleanup when Docker is closed
 
 ## Configuration
-
-### limit-nvpstate Settings
-The program can modify the limit-nvpstate configuration file. Use the `ModifyConfig()` function:
-```cpp
-ModifyConfig(true);  // Set start_minimized to true
-ModifyConfig(false); // Set start_minimized to false
-```
 
 ### Docker Container Settings
 The default Docker container configuration for NVidia GPUs is:
@@ -81,13 +69,11 @@ Modify these settings in the code as needed.
 The tool actively monitors:
 - Docker Desktop process
 - Ollama process
-- limit-nvpstate process
 - WSL status
 
 When Docker Desktop is closed, the tool automatically:
 1. Terminates Ollama
-2. Kills limit-nvpstate
-3. Shuts down WSL
+2. Shuts down WSL
 
 ## Building from Source
 
@@ -113,4 +99,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Docker Desktop
 - Ollama
 - Open WebUI
-- limit-nvpstate utility
