@@ -7,8 +7,142 @@
 #include <thread>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
+#include <nlohmann/json.hpp>
 
-// Function to execute commands as administrator
+using json = nlohmann::json;
+namespace fs = std::filesystem;
+
+void HideConsole()
+{
+    ::ShowWindow(::GetConsoleWindow(), SW_HIDE);
+}
+
+void ShowConsole()
+{
+    ::ShowWindow(::GetConsoleWindow(), SW_SHOW);
+}
+
+struct Config {
+    std::wstring ollamaPath;
+    std::wstring dockerPath;
+    std::wstring limitNvpstatePath;
+    std::wstring limitNvpstateConfigPath;
+    bool isValid() const {
+        return !ollamaPath.empty() && !dockerPath.empty() &&
+            !limitNvpstatePath.empty() && !limitNvpstateConfigPath.empty();
+    }
+};
+
+void createDefaultConfig(const std::string& configPath) {
+    json defaultConfig = {
+        {"ollamaPath", ""},
+        {"dockerPath", ""},
+        {"limitNvpstatePath", ""},
+        {"limitNvpstateConfigPath", ""}
+    };
+
+    std::ofstream configFile(configPath);
+    configFile << defaultConfig.dump(4);
+}
+
+std::string GetExecutablePath() {
+    wchar_t buffer[MAX_PATH];
+    GetModuleFileNameW(NULL, buffer, MAX_PATH);
+    std::wstring ws(buffer);
+    std::string path(ws.begin(), ws.end());
+    return path.substr(0, path.find_last_of("\\/"));
+}
+
+Config loadConfig() {
+    Config config;
+    std::string exePath = GetExecutablePath();
+    const std::string configPath = exePath + "\\config.json";
+
+    std::wcout << L"Attempting to load config from: " << std::wstring(configPath.begin(), configPath.end()) << std::endl;
+
+    // Create default config if it doesn't exist
+    if (!fs::exists(configPath)) {
+        std::wcout << L"Config file does not exist. Creating default config..." << std::endl;
+        createDefaultConfig(configPath);
+        std::wcout << L"Created default config.json in:\n";
+        std::wcout << std::wstring(configPath.begin(), configPath.end()) << L"\n";
+        std::wcout << L"Please edit config.json and set the following paths:\n";
+        std::wcout << L"- ollamaPath (path to Ollama executable)\n";
+        std::wcout << L"- dockerPath (path to Docker Desktop)\n";
+        std::wcout << L"- limitNvpstatePath (path to limit-nvpstate executable)\n";
+        std::wcout << L"- limitNvpstateConfigPath (path to limit-nvpstate config)\n";
+        return config;
+    }
+
+    try {
+        std::wcout << L"Reading config file..." << std::endl;
+        std::ifstream configFile(configPath);
+        if (!configFile.is_open()) {
+            std::wcout << L"Error: Could not open config file!" << std::endl;
+            return config;
+        }
+
+        json j;
+        configFile >> j;
+
+        // Debug output
+        //std::wcout << L"Config file contents:" << std::endl;
+        //std::cout << j.dump(4) << std::endl;
+
+        // Convert JSON strings to wstring
+        std::string ollamaPath = j["ollamaPath"];
+        std::string dockerPath = j["dockerPath"];
+        std::string limitNvpstatePath = j["limitNvpstatePath"];
+        std::string limitNvpstateConfigPath = j["limitNvpstateConfigPath"];
+
+        std::wcout << L"Checking paths..." << std::endl;
+
+        // Check each path individually and report status
+        if (!fs::exists(ollamaPath)) {
+            std::wcout << L"Error: Ollama path does not exist: " <<
+                std::wstring(ollamaPath.begin(), ollamaPath.end()) << std::endl;
+            return config;
+        }
+        if (!fs::exists(dockerPath)) {
+            std::wcout << L"Error: Docker path does not exist: " <<
+                std::wstring(dockerPath.begin(), dockerPath.end()) << std::endl;
+            return config;
+        }
+        if (!fs::exists(limitNvpstatePath)) {
+            std::wcout << L"Error: limit-nvpstate path does not exist: " <<
+                std::wstring(limitNvpstatePath.begin(), limitNvpstatePath.end()) << std::endl;
+            return config;
+        }
+        if (!fs::exists(limitNvpstateConfigPath)) {
+            std::wcout << L"Error: limit-nvpstate config path does not exist: " <<
+                std::wstring(limitNvpstateConfigPath.begin(), limitNvpstateConfigPath.end()) << std::endl;
+            return config;
+        }
+
+        //std::wcout << L"All paths exist. Converting to wstring..." << std::endl;
+
+        // Convert paths to wstring
+        config.ollamaPath = std::wstring(ollamaPath.begin(), ollamaPath.end());
+        config.dockerPath = std::wstring(dockerPath.begin(), dockerPath.end());
+        config.limitNvpstatePath = std::wstring(limitNvpstatePath.begin(), limitNvpstatePath.end());
+        config.limitNvpstateConfigPath = std::wstring(limitNvpstateConfigPath.begin(), limitNvpstateConfigPath.end());
+
+        std::wcout << L"Configuration loaded successfully!" << std::endl;
+
+    }
+    catch (const json::exception& e) {
+        std::wcout << L"JSON parsing error: " << e.what() << std::endl;
+        return config;
+    }
+    catch (const std::exception& e) {
+        std::wcout << L"Error loading config: " << e.what() << std::endl;
+        return config;
+    }
+
+    return config;
+}
+
 bool ExecuteCommandAsAdmin(const wchar_t* command) {
     SHELLEXECUTEINFO sei = { sizeof(sei) };
     sei.lpVerb = L"runas";  // Request elevation
@@ -18,7 +152,6 @@ bool ExecuteCommandAsAdmin(const wchar_t* command) {
     return ShellExecuteEx(&sei);
 }
 
-// Function to check if a process is running
 bool IsProcessRunning(const wchar_t* processName) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return false;
@@ -42,7 +175,6 @@ bool IsProcessRunning(const wchar_t* processName) {
     return false;
 }
 
-// Function to start a process
 bool StartProcess(const wchar_t* path) {
     STARTUPINFOW si = { sizeof(si) };
     PROCESS_INFORMATION pi;
@@ -55,7 +187,6 @@ bool StartProcess(const wchar_t* path) {
     return false;
 }
 
-// Function to kill a process by name
 void KillProcess(const wchar_t* processName) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) return;
@@ -78,9 +209,8 @@ void KillProcess(const wchar_t* processName) {
     CloseHandle(snapshot);
 }
 
-// Function to modify config.json
-bool ModifyConfig(bool startMinimized) {
-    const std::string configPath = "D:\\Users\\Gamer\\Desktop\\FPS Latency Tools\\Limit-nvpstate\\limit-nvpstate\\config.json";
+// Function to modify nvpstate config.json
+bool ModifyConfig(const std::wstring& configPath, bool startMinimized) {
     std::ifstream inFile(configPath);
     if (!inFile) return false;
 
@@ -125,30 +255,39 @@ void OpenBrowser(const wchar_t* url) {
 }
 
 int main() {
+    // Load configuration
+    Config config = loadConfig();
+    if (!config.isValid()) {
+        std::wcout << L"Invalid configuration. Please check config.json and try again.\n";
+        std::wcout << L"Press any key to exit...";
+        std::cin.get();
+        return 1;
+    }
+
     // Kill limit-nvpstate if running
     std::wcout << L"Stopping limit-nvpstate..." << std::endl;
     KillProcess(L"limit-nvpstate.exe");
 
     // Modify config
     std::wcout << L"Modifying config..." << std::endl;
-    if (!ModifyConfig(false)) {
+    if (!ModifyConfig(config.limitNvpstateConfigPath, false)) {
         std::wcout << L"Failed to modify config file!" << std::endl;
         return 1;
     }
 
     // Start limit-nvpstate
     std::wcout << L"Starting limit-nvpstate..." << std::endl;
-    StartProcess(L"D:\\Users\\Gamer\\Desktop\\FPS Latency Tools\\Limit-nvpstate\\limit-nvpstate\\limit-nvpstate.exe");
+    StartProcess(config.limitNvpstatePath.c_str());
 
     // Start Ollama
     std::wcout << L"Starting Ollama..." << std::endl;
-    StartProcess(L"C:\\Users\\Gamer\\AppData\\Local\\Programs\\Ollama\\ollama app.exe");
-    std::this_thread::sleep_for(std::chrono::seconds(5));  // Give Ollama time to start
+    StartProcess(config.ollamaPath.c_str());
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
     // Start Docker
     std::wcout << L"Starting Docker..." << std::endl;
-    StartProcess(L"C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe");
-    std::this_thread::sleep_for(std::chrono::seconds(5));  // Give Docker time to start
+    StartProcess(config.dockerPath.c_str());
+    std::this_thread::sleep_for(std::chrono::seconds(5));
 
     // Run docker command
     std::wcout << L"Starting Open WebUI container..." << std::endl;
@@ -163,8 +302,10 @@ int main() {
 
     // Monitor Docker
     std::wcout << L"Monitoring Docker process..." << std::endl;
+    HideConsole();
     while (true) {
         if (!IsProcessRunning(L"Docker Desktop.exe")) {
+            ShowConsole();
             std::wcout << L"Docker closed, shutting down..." << std::endl;
 
             // Stop Ollama
@@ -173,15 +314,18 @@ int main() {
             KillProcess(L"ollama_llama_server.exe");
 
             // Make limit-nvpstate run minimized again once we're done
-            ModifyConfig(true);
+            ModifyConfig(config.limitNvpstateConfigPath, true);
 
             // Start limit-nvpstate
             std::wcout << L"Starting limit-nvpstate..." << std::endl;
-            StartProcess(L"D:\\Users\\Gamer\\Desktop\\FPS Latency Tools\\Limit-nvpstate\\limit-nvpstate\\limit-nvpstate.exe");
+            StartProcess(config.limitNvpstatePath.c_str());
 
             // Shutdown WSL
             std::wcout << L"Shutting down wsl..." << std::endl;
             ExecuteCommandAsAdmin(L"wsl --shutdown");
+
+            std::wcout << L"Shutdown process completed." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(3));
 
             break;
         }
