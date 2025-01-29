@@ -1,6 +1,4 @@
 {
     "dockerPath": "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
-    "limitNvpstateConfigPath": "D:\\Users\\Gamer\\Desktop\\FPS Latency Tools\\Limit-nvpstate\\limit-nvpstate\\config.json",
-    "limitNvpstatePath": "D:\\Users\\Gamer\\Desktop\\FPS Latency Tools\\Limit-nvpstate\\limit-nvpstate\\limit-nvpstate.exe",
     "ollamaPath": "C:\\Users\\Gamer\\AppData\\Local\\Programs\\Ollama\\ollama app.exe"
 }
