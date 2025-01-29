@@ -142,7 +142,7 @@ int main() {
 
     // Start Ollama
     std::wcout << L"Starting Ollama..." << std::endl;
-    StartProcess(L"C:\\Program Files\\Ollama\\ollama.exe");
+    StartProcess(L"C:\\Users\\Gamer\\AppData\\Local\\Programs\\Ollama\\ollama app.exe");
     std::this_thread::sleep_for(std::chrono::seconds(5));  // Give Ollama time to start
 
     // Start Docker
@@ -152,7 +152,7 @@ int main() {
 
     // Run docker command
     std::wcout << L"Starting Open WebUI container..." << std::endl;
-    ExecuteCommandAsAdmin(L"docker run -d -p 3000:8080 --gpus all --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:cuda");
+    ExecuteCommandAsAdmin(L"docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main");
 
     // Wait for container to start
     std::this_thread::sleep_for(std::chrono::seconds(8));
@@ -168,7 +168,9 @@ int main() {
             std::wcout << L"Docker closed, shutting down..." << std::endl;
 
             // Stop Ollama
+            system("taskkill /F /IM ollama app.exe");
             system("taskkill /F /IM ollama.exe");
+            system("taskkill /F /IM ollama_llama_server.exe");
 
             // Make limit-nvpstate run minimized again once we're done
             ModifyConfig(true);
