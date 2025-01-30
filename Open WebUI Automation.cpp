@@ -183,14 +183,12 @@ int main() {
     std::this_thread::sleep_for(5s);
 
     std::wcout << L"Starting Open WebUI container..." << std::endl;
-    ProcessManager::ExecuteAsAdmin(L"docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway "
-        L"-v open-webui:/app/backend/data --name open-webui --restart always "
-        L"ghcr.io/open-webui/open-webui:main");
+    ProcessManager::ExecuteAsAdmin(L"docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main");
 
     std::this_thread::sleep_for(10s);
 
     std::wcout << L"Opening browser..." << std::endl;
-    ShellExecuteW(nullptr, L"open", L"http://localhost:3000/", nullptr, nullptr, SW_SHOWNORMAL);
+    ShellExecuteW(NULL, L"open", L"http://localhost:3000/", NULL, NULL, SW_SHOWNORMAL);
 
     std::wcout << L"Monitoring Docker process..." << std::endl;
     ConsoleManager::Hide();
