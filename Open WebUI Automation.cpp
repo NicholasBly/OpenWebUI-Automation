@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <tlhelp32.h>
+#include <winhttp.h>
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -7,32 +8,70 @@
 #include <fstream>
 #include <filesystem>
 #include <vector>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
+
+#pragma comment(lib, "winhttp.lib")
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 
+// -------------------------
+// Logging Helper
+// -------------------------
+enum class LogLevel { Info, Warning, Error };
+
+void Log(LogLevel level, const std::wstring& message) {
+    const std::wstring prefix =
+        (level == LogLevel::Info) ? L"[INFO] " :
+        (level == LogLevel::Warning) ? L"[WARNING] " : L"[ERROR] ";
+    std::wcout << prefix << message << std::endl;
+}
+
+// -------------------------
+// Console Manager
+// -------------------------
 class ConsoleManager {
 public:
     static void Hide() { ::ShowWindow(::GetConsoleWindow(), SW_HIDE); }
     static void Show() { ::ShowWindow(::GetConsoleWindow(), SW_SHOW); }
 };
 
+// -------------------------
+// Unicode conversion helper
+// -------------------------
+std::wstring UTF8ToWString(const std::string& str) {
+    if (str.empty())
+        return std::wstring();
+    const int size_needed = MultiByteToWideChar(CP_UTF8, 0, str.data(),
+        static_cast<int>(str.size()), nullptr, 0);
+    std::wstring wstr(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.data(),
+        static_cast<int>(str.size()), &wstr[0], size_needed);
+    return wstr;
+}
+
+// -------------------------
+// Configuration structure
+// -------------------------
 struct Config {
     std::wstring ollamaPath;
     std::wstring dockerPath;
 
     bool isValid() const {
-        return !ollamaPath.empty() &&
-            !dockerPath.empty();
+        return !ollamaPath.empty() && !dockerPath.empty();
     }
 };
 
+// -------------------------
+// Process Manager
+// -------------------------
 class ProcessManager {
 public:
-    static bool IsRunning(const std::wstring& processName) {
-        const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    // Check if a process (by executable name) is running.
+    static bool IsRunning(std::wstring_view processName) {
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if (snapshot == INVALID_HANDLE_VALUE) return false;
 
         PROCESSENTRY32W pe32{ sizeof(pe32) };
@@ -40,41 +79,80 @@ public:
 
         if (Process32FirstW(snapshot, &pe32)) {
             do {
-                if (_wcsicmp(pe32.szExeFile, processName.c_str()) == 0) {
+                if (_wcsicmp(pe32.szExeFile, processName.data()) == 0) {
                     found = true;
                     break;
                 }
             } while (Process32NextW(snapshot, &pe32));
         }
-
         CloseHandle(snapshot);
         return found;
     }
 
+    // Wait for at least one process from a list to appear, up to a timeout.
+    static bool WaitForAnyProcess(const std::vector<std::wstring>& processNames,
+        std::chrono::milliseconds checkInterval = 500ms,
+        std::chrono::milliseconds timeout = 10000ms)
+    {
+        const auto start = std::chrono::steady_clock::now();
+        while (std::chrono::steady_clock::now() - start < timeout) {
+            for (const auto& name : processNames) {
+                if (IsRunning(name)) {
+                    Log(LogLevel::Info, L"Detected process: " + name);
+                    return true;
+                }
+            }
+            std::this_thread::sleep_for(checkInterval);
+        }
+        return false;
+    }
+
+    // Overload for waiting for a single process.
+    static bool WaitForProcess(std::wstring_view processName,
+        std::chrono::milliseconds checkInterval = 500ms,
+        std::chrono::milliseconds timeout = 10000ms)
+    {
+        return WaitForAnyProcess({ std::wstring(processName) }, checkInterval, timeout);
+    }
+
+    // Start a process given its full path.
     static bool Start(const std::wstring& path) {
         STARTUPINFOW si{ sizeof(si) };
         PROCESS_INFORMATION pi{};
-
-        const auto success = CreateProcessW(path.c_str(), nullptr, nullptr, nullptr,
+        BOOL success = CreateProcessW(path.c_str(), nullptr, nullptr, nullptr,
             FALSE, 0, nullptr, nullptr, &si, &pi);
 
         if (success) {
+            Log(LogLevel::Info, L"Started process: " + path);
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
         }
-        return success;
+        else {
+            DWORD errorCode = GetLastError();
+            Log(LogLevel::Error, L"Failed to start process: " + path +
+                L" Error code: " + std::to_wstring(errorCode));
+        }
+        return success != 0;
     }
 
-    static void Kill(const std::wstring& processName) {
-        const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    // Kill all processes that match the given process name.
+    static void Kill(std::wstring_view processName) {
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if (snapshot == INVALID_HANDLE_VALUE) return;
 
         PROCESSENTRY32W pe32{ sizeof(pe32) };
         if (Process32FirstW(snapshot, &pe32)) {
             do {
-                if (_wcsicmp(pe32.szExeFile, processName.c_str()) == 0) {
-                    if (const auto process = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID)) {
-                        TerminateProcess(process, 0);
+                if (_wcsicmp(pe32.szExeFile, processName.data()) == 0) {
+                    HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, pe32.th32ProcessID);
+                    if (process) {
+                        if (TerminateProcess(process, 0))
+                            Log(LogLevel::Info, L"Terminated process: " + std::wstring(processName));
+                        else {
+                            DWORD errorCode = GetLastError();
+                            Log(LogLevel::Error, L"Failed to terminate process: " + std::wstring(processName) +
+                                L" Error code: " + std::to_wstring(errorCode));
+                        }
                         CloseHandle(process);
                     }
                 }
@@ -83,44 +161,113 @@ public:
         CloseHandle(snapshot);
     }
 
+    // Execute a command as administrator (using runas verb).
     static bool ExecuteAsAdmin(const std::wstring& command) {
         SHELLEXECUTEINFOW sei{ sizeof(sei) };
         sei.lpVerb = L"runas";
         sei.lpFile = L"powershell.exe";
         sei.lpParameters = command.c_str();
         sei.nShow = SW_HIDE;
-        return ShellExecuteExW(&sei);
+        if (!ShellExecuteExW(&sei)) {
+            DWORD errorCode = GetLastError();
+            Log(LogLevel::Error, L"Failed to execute command as admin. Error code: " + std::to_wstring(errorCode));
+            return false;
+        }
+        Log(LogLevel::Info, L"Executed admin command: " + command);
+        return true;
     }
 };
 
+// -------------------------
+// WebUI Checker (using WinHTTP)
+// -------------------------
+bool WaitForWebUI(const std::wstring& host, INTERNET_PORT port,
+    std::chrono::milliseconds timeout = 15000ms,
+    std::chrono::milliseconds interval = 1000ms)
+{
+    const auto start = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() - start < timeout)
+    {
+        // Open a WinHTTP session.
+        HINTERNET hSession = WinHttpOpen(L"WebUI Checker/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+        if (hSession)
+        {
+            // Connect to the host (localhost) on the given port.
+            HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), port, 0);
+            if (hConnect)
+            {
+                // Open an HTTP request.
+                HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/", nullptr,
+                    WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
+                if (hRequest)
+                {
+                    // Send the request.
+                    if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                        WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
+                    {
+                        if (WinHttpReceiveResponse(hRequest, nullptr))
+                        {
+                            DWORD statusCode = 0;
+                            DWORD size = sizeof(statusCode);
+                            // Query the HTTP status code.
+                            if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &size, WINHTTP_NO_HEADER_INDEX))
+                            {
+                                if (statusCode == 200)
+                                {
+                                    Log(LogLevel::Info, L"WebUI is up with status code 200.");
+                                    WinHttpCloseHandle(hRequest);
+                                    WinHttpCloseHandle(hConnect);
+                                    WinHttpCloseHandle(hSession);
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    WinHttpCloseHandle(hRequest);
+                }
+                WinHttpCloseHandle(hConnect);
+            }
+            WinHttpCloseHandle(hSession);
+        }
+        std::this_thread::sleep_for(interval);
+    }
+    Log(LogLevel::Warning, L"Timed out waiting for WebUI to become available.");
+    return false;
+}
+
+// -------------------------
+// Config Manager
+// -------------------------
 class ConfigManager {
 public:
     static Config Load() {
-        const auto configPath = GetExecutablePath() / "config.json";
-        std::wcout << L"Attempting to load config from: " << configPath.wstring() << std::endl;
+        fs::path configPath = GetExecutablePath() / "config.json";
+        Log(LogLevel::Info, L"Attempting to load config from: " + configPath.wstring());
 
         if (!fs::exists(configPath)) {
-            std::wcout << L"Config file does not exist. Creating default config..." << std::endl;
+            Log(LogLevel::Warning, L"Config file does not exist. Creating default config...");
             CreateDefaultConfig(configPath);
             return {};
         }
 
         try {
-            std::wcout << L"Reading config file..." << std::endl;
+            Log(LogLevel::Info, L"Reading config file...");
             std::ifstream file(configPath);
             json j = json::parse(file);
 
             Config config;
-            config.ollamaPath = ToWString(j["ollamaPath"].get<std::string>());
-            config.dockerPath = ToWString(j["dockerPath"].get<std::string>());
+            config.ollamaPath = UTF8ToWString(j.at("ollamaPath").get<std::string>());
+            config.dockerPath = UTF8ToWString(j.at("dockerPath").get<std::string>());
 
-            std::wcout << L"Checking paths..." << std::endl;
+            Log(LogLevel::Info, L"Checking paths...");
             ValidatePaths(config);
-            std::wcout << L"Configuration loaded successfully!" << std::endl;
+            Log(LogLevel::Info, L"Configuration loaded successfully!");
             return config;
         }
         catch (const std::exception& e) {
-            std::wcerr << L"Error loading config: " << e.what() << std::endl;
+            Log(LogLevel::Error, L"Error loading config: " + UTF8ToWString(e.what()));
             return {};
         }
     }
@@ -138,17 +285,16 @@ private:
             {"dockerPath", ""}
         };
 
-        std::ofstream(path) << defaultConfig.dump(4);
+        std::ofstream ofs(path);
+        if (!ofs)
+            throw std::runtime_error("Unable to create config file: " + path.string());
+        ofs << defaultConfig.dump(4);
+        ofs.close();
 
-        std::wcout << L"Created default config.json in:\n";
-        std::wcout << path.wstring() << L"\n";
-        std::wcout << L"Please edit config.json and set the following paths:\n";
-        std::wcout << L"- ollamaPath (path to Ollama executable)\n";
-        std::wcout << L"- dockerPath (path to Docker Desktop)\n";
-    }
-
-    static std::wstring ToWString(const std::string& str) {
-        return std::wstring(str.begin(), str.end());
+        Log(LogLevel::Info, L"Created default config.json in: " + path.wstring());
+        Log(LogLevel::Info, L"Please edit config.json and set the following paths:");
+        Log(LogLevel::Info, L"- ollamaPath (path to Ollama executable)");
+        Log(LogLevel::Info, L"- dockerPath (path to Docker Desktop)");
     }
 
     static void ValidatePaths(const Config& config) {
@@ -166,54 +312,82 @@ private:
     }
 };
 
+// -------------------------
+// Main Application
+// -------------------------
 int main() {
-    const auto config = ConfigManager::Load();
+    // Load configuration.
+    const Config config = ConfigManager::Load();
     if (!config.isValid()) {
-        std::wcout << L"Invalid configuration. Please check config.json\n";
+        Log(LogLevel::Error, L"Invalid configuration. Please check config.json");
         std::cin.get();
         return 1;
     }
 
-    std::wcout << L"Starting Ollama..." << std::endl;
-    ProcessManager::Start(config.ollamaPath);
-    std::this_thread::sleep_for(5s);
+    // Start Ollama and wait for one of its processes.
+    Log(LogLevel::Info, L"Starting Ollama...");
+    if (!ProcessManager::Start(config.ollamaPath)) {
+        Log(LogLevel::Error, L"Failed to start Ollama.");
+        return 1;
+    }
+    const std::vector<std::wstring> ollamaProcesses = {
+        L"ollama app.exe",
+        L"ollama.exe",
+        L"ollama_llama_server.exe"
+    };
+    ProcessManager::WaitForAnyProcess(ollamaProcesses, 500ms, 10000ms);
 
-    std::wcout << L"Starting Docker..." << std::endl;
-    ProcessManager::Start(config.dockerPath);
-    std::this_thread::sleep_for(5s);
+    // Start Docker and wait for its process.
+    Log(LogLevel::Info, L"Starting Docker...");
+    if (!ProcessManager::Start(config.dockerPath)) {
+        Log(LogLevel::Error, L"Failed to start Docker.");
+        return 1;
+    }
+    ProcessManager::WaitForProcess(L"Docker Desktop.exe", 500ms, 10000ms);
 
-    std::wcout << L"Starting Open WebUI container..." << std::endl;
-    ProcessManager::ExecuteAsAdmin(L"docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main");
+    // Start Open WebUI container as admin.
+    Log(LogLevel::Info, L"Starting Open WebUI container...");
+    const std::wstring dockerCommand =
+        L"docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway "
+        L"-v open-webui:/app/backend/data --name open-webui --restart always "
+        L"ghcr.io/open-webui/open-webui:main";
+    ProcessManager::ExecuteAsAdmin(dockerCommand);
 
-    std::this_thread::sleep_for(10s);
-
-    std::wcout << L"Opening browser..." << std::endl;
-    ShellExecuteW(NULL, L"open", L"http://localhost:3000/", NULL, NULL, SW_SHOWNORMAL);
-
-    std::wcout << L"Monitoring Docker process..." << std::endl;
-    ConsoleManager::Hide();
-    while (ProcessManager::IsRunning(L"Docker Desktop.exe")) {
-        std::this_thread::sleep_for(5s);
+    // Wait until WebUI is available before opening the browser.
+    if (WaitForWebUI(L"localhost", 3000, 30000ms, 1000ms)) {
+        Log(LogLevel::Info, L"Opening browser...");
+        ShellExecuteW(nullptr, L"open", L"http://localhost:3000/", nullptr, nullptr, SW_SHOWNORMAL);
+    }
+    else {
+        Log(LogLevel::Warning, L"WebUI did not become available within the timeout period.");
     }
 
+    // Monitor Docker process.
+    Log(LogLevel::Info, L"Monitoring Docker process...");
+    ConsoleManager::Hide();
+    while (ProcessManager::IsRunning(L"Docker Desktop.exe")) {
+        std::this_thread::sleep_for(5000ms);
+    }
     ConsoleManager::Show();
-    std::wcout << L"Docker closed, shutting down...\n";
 
+    Log(LogLevel::Info, L"Docker closed, shutting down...");
+
+    // Kill all Ollama-related processes.
     const std::vector<std::wstring> processesToKill = {
         L"ollama app.exe",
         L"ollama.exe",
         L"ollama_llama_server.exe"
     };
-
     for (const auto& process : processesToKill) {
         ProcessManager::Kill(process);
     }
 
-    std::wcout << L"Shutting down wsl..." << std::endl;
+    // Shut down WSL.
+    Log(LogLevel::Info, L"Shutting down WSL...");
     ProcessManager::ExecuteAsAdmin(L"wsl --shutdown");
 
-    std::wcout << L"Shutdown process completed." << std::endl;
-    std::this_thread::sleep_for(2s);
+    Log(LogLevel::Info, L"Shutdown process completed.");
+    std::this_thread::sleep_for(2000ms);
 
     return 0;
 }

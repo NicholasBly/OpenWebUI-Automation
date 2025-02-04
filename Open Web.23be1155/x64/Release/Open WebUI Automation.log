@@ -3,7 +3,7 @@ C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.42.3443
   (compiling source file 'Open%20WebUI%20Automation.cpp')
       C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.42.34433\include\xutility(4709,18):
       the template instantiation context (the oldest one first) is
-          C:\Users\Gamer\source\repos\Open WebUI Automation No LimitNVPState\Open WebUI Automation.cpp(163,32):
+          C:\Users\Gamer\source\repos\Open WebUI Automation No LimitNVPState\Open WebUI Automation.cpp(309,32):
           see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_const_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
           with
           [
@@ -11,7 +11,7 @@ C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.42.3443
               _Iter=std::_String_const_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
               _Alloc=std::allocator<char>
           ]
-              C:\Users\Gamer\source\repos\Open WebUI Automation No LimitNVPState\Open WebUI Automation.cpp(162,17):
+              C:\Users\Gamer\source\repos\Open WebUI Automation No LimitNVPState\Open WebUI Automation.cpp(308,17):
               see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'ConfigManager::ValidatePaths'
           C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.42.34433\include\xstring(793,17):
           see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<const wchar_t*,const wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
@@ -33,7 +33,7 @@ C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.42.3443
           ]
   
   Generating code
-  Previous IPDB and IOBJ mismatch, fall back to full compilation.
-  All 1910 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Previous IPDB not found, fall back to full compilation.
+  All 1933 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   Open WebUI Automation.vcxproj -> C:\Users\Gamer\source\repos\Open WebUI Automation No LimitNVPState\x64\Release\Open WebUI Automation.exe
