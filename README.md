@@ -1,21 +1,20 @@
 # Docker WebUI Automation Tool
 
-A lightweight C++ automation tool designed to streamline the process of launching and managing Docker, Ollama, and Open WebUI. The tool will monitor the docker process and clean up after it has been closed.
+A lightweight C++ automation tool designed to streamline the process of launching and managing Docker, Ollama, and Open WebUI. The tool will monitor the Docker process and clean up after it has been closed.
 
 ## Features
 
 - Config.json creation to define paths to executables
 - Automated startup sequence for Docker Desktop and Ollama
-- Automatic deployment of Open WebUI container
-- Intelligent Docker status monitoring
+- Automatic deployment of Open WebUI container and launches into your web browser when it's ready
+- Monitors Docker process and starts the shutdown and cleanup processes when it has been closed (Right click Docker icon in tray and exit)
 - Shutdown of all components when Docker closes
 - WSL shutdown automation
-- Process monitoring and management
 
 ## Prerequisites
 
 - Windows 10/11
-- Visual Studio 2022
+- Visual Studio 2022 (for editing source files)
 - Docker Desktop
 - Ollama
 - WSL (Windows Subsystem for Linux)
@@ -57,7 +56,7 @@ The program will:
 ## Configuration
 
 ### Docker Container Settings
-The default Docker container configuration for NVidia GPUs is:
+The default Docker container configuration is:
 ```bash
 docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/backend/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main
 ```
